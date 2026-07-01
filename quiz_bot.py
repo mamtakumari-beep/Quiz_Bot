@@ -5,7 +5,7 @@ import logging
 import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, types
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, 
     filters, ContextTypes, ConversationHandler, CallbackQueryHandler, PollAnswerHandler
@@ -159,10 +159,18 @@ async def receive_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     context.user_data["quiz_build"]["description"] = "" if text.lower() == "/skip" else text
     await update.message.reply_text(
         f"Good. Your quiz '{context.user_data['quiz_build']['title']}' now has 0 questions. If you made a mistake, send /undo.\n\n"
-        "💡 **Sawal jodne ke liye:**\nClick on 📎 (Attachment) -> Select **Poll**.\n"
+        "💡 **Sawal jodne ke liye:**\n"
+        "Click on the button below to create poll questions using our Web App interface.\n\n"
+        "Or use the traditional method:\nClick on 📎 (Attachment) -> Select **Poll**.\n"
         "Enable **Quiz Mode**, add 2-7 options, pick the correct one, and tap Create.\n\n"
         "Send /done when finished adding questions.",
-        reply_markup=ReplyKeyboardRemove()
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton(
+                "➕ Create Poll via Web App",
+                web_app=types.WebAppInfo(url="https://mamtakumari-beep.github.io/Polls-question-/")
+            )],
+            [InlineKeyboardButton("Send Poll Manually", callback_data="manual_poll")]
+        ])
     )
     return QUESTIONS
 
@@ -184,7 +192,14 @@ async def receive_poll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     
     await update.message.reply_text(
         f"✅ Question added! Your quiz now has {len(context.user_data['quiz_build']['questions'])} question(s).\n\n"
-        "Send next question or /done to finish."
+        "Send next question or /done to finish.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton(
+                "➕ Create Another Poll",
+                web_app=types.WebAppInfo(url="https://mamtakumari-beep.github.io/Polls-question-/")
+            )],
+            [InlineKeyboardButton("Send Poll Manually", callback_data="manual_poll")]
+        ])
     )
     return QUESTIONS
 
