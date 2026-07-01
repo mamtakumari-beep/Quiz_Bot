@@ -246,7 +246,7 @@ async def handle_timer_text(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return ConversationHandler.END
 
 async def view_my_quizzes(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Fetches and displays all quizzes created by the user with command interface"""
+    """Fetches and displays all quizzes created by the user with View buttons"""
     query = update.callback_query
     user_id = query.from_user.id
     await query.answer()
@@ -273,51 +273,28 @@ async def view_my_quizzes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Build text-based list with /view commands only
+    # Build list with View buttons for each quiz
     text = "📚 **Aapke Banaye Huye Quizzes:**\n\n"
     
+    keyboard = []
     for idx, (qid, title, timer, q_count) in enumerate(rows, 1):
         time_display = f"{timer}s" if timer < 60 else f"{timer // 60}m"
         text += f"{idx}. **{escape_markdown(title)}**\n"
-        text += f"   ☞ {q_count} question{'s' if q_count != 1 else ''} | {time_display}/Q\n"
-        text += f"   `/view_{qid}`\n\n"
+        text += f"   ☞ {q_count} question{'s' if q_count != 1 else ''} | {time_display}/Q\n\n"
+        # Add View button for each quiz
+        keyboard.append([InlineKeyboardButton(f"📖 View", callback_data=f"viewq_{qid}")])
     
-    # Back button included
-    keyboard = [[InlineKeyboardButton("Back to Main Menu 🔙", callback_data="back_main")]]
+    # Back button
+    keyboard.append([InlineKeyboardButton("Back to Main Menu 🔙", callback_data="back_main")])
     await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-async def handle_view_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /view_ID command from user"""
-    msg = update.message.text.strip()
-    
-    # Extract quiz_id from /view_ID format
-    if not msg.startswith("/view_"):
-        await update.message.reply_text("❌ Invalid format. Use `/view_ID` where ID is the quiz number.")
-        return
-    
-    try:
-        quiz_id = int(msg.split("_")[1])
-    except (IndexError, ValueError):
-        await update.message.reply_text("❌ Invalid quiz ID. Use `/view_ID` format.")
-        return
-    
-    # Verify quiz belongs to user
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT creator_id FROM quizzes WHERE quiz_id = ?", (quiz_id,))
-    quiz_creator = cursor.fetchone()
-    conn.close()
-    
-    if not quiz_creator:
-        await update.message.reply_text("❌ Quiz not found!")
-        return
-    
-    if quiz_creator[0] != update.message.from_user.id:
-        await update.message.reply_text("❌ This quiz doesn't belong to you!")
-        return
-    
-    # Show summary panel
-    await show_summary_panel_for_command(update, context, quiz_id)
+async def handle_view_quiz_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles opening summary panel from the quiz list"""
+    query = update.callback_query
+    await query.answer()
+    quiz_id = int(query.data.split("_")[1])
+    await query.message.delete()
+    await show_summary_panel(query, context, quiz_id)
 
 async def show_summary_panel(query, context, quiz_id):
     try:
@@ -359,48 +336,6 @@ async def show_summary_panel(query, context, quiz_id):
     except Exception as e:
         logging.error(f"Error in show_summary_panel: {e}")
         await query.message.reply_text(f"❌ Error: {str(e)}")
-
-async def show_summary_panel_for_command(update, context, quiz_id):
-    """Show summary panel for /view_ID command"""
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("SELECT title, timer FROM quizzes WHERE quiz_id = ?", (quiz_id,))
-        quiz_data = cursor.fetchone()
-        
-        if not quiz_data:
-            await update.message.reply_text("❌ Error: Quiz data could not be retrieved.")
-            conn.close()
-            return
-        
-        title, timer = quiz_data
-        cursor.execute("SELECT COUNT(*) FROM questions WHERE quiz_id = ?", (quiz_id,))
-        total_q = cursor.fetchone()
-        conn.close()
-
-        time_display = f"{timer} sec" if timer < 60 else f"{timer // 60} min"
-        bot_username = context.bot.username if context.bot.username else "quiz_bot"
-        escaped_title = escape_markdown(title)
-        
-        summary_text = (
-            "👍 Here's your quiz:\n\n"
-            f"📚 {escaped_title}\n"
-            f"🙋‍♂️ {total_q[0]} question(s) · ⏱ Time: {time_display}\n\n"
-            f"🔗 External sharing link:\n"
-            f"`https://t.me/{bot_username}?start=quiz_{quiz_id}`"
-        )
-        
-        inline_keyboard = [
-            [InlineKeyboardButton("🏁 Start Private Chat", callback_data=f"startprivate_{quiz_id}")],
-            [InlineKeyboardButton("👥 Start in Group", url=f"https://t.me/{bot_username}?startgroup=quiz_{quiz_id}")],
-            [InlineKeyboardButton("📢 Share Quiz", url=f"https://t.me/share/url?url=https://t.me/{bot_username}?start=quiz_{quiz_id}")],
-            [InlineKeyboardButton("⚙️ Edit", callback_data=f"edit_{quiz_id}"), InlineKeyboardButton("📊 Status", callback_data=f"status_{quiz_id}")]
-        ]
-        reply_markup = InlineKeyboardMarkup(inline_keyboard)
-        await update.message.reply_text(summary_text, reply_markup=reply_markup, parse_mode="Markdown")
-    except Exception as e:
-        logging.error(f"Error in show_summary_panel_for_command: {e}")
-        await update.message.reply_text(f"❌ Error: {str(e)}")
 
 async def show_summary_panel_text(update, context, quiz_id):
     try:
@@ -982,9 +917,7 @@ def main():
     # Core system triggers binding maps
     app.add_handler(CallbackQueryHandler(view_my_quizzes, pattern="^btn_viewquizzes$"))
     app.add_handler(CallbackQueryHandler(handle_back_main, pattern="^back_main$"))
-    
-    # Handle /view_ID command
-    app.add_handler(MessageHandler(filters.COMMAND, handle_view_command))
+    app.add_handler(CallbackQueryHandler(handle_view_quiz_callback, pattern="^viewq_"))
     
     app.add_handler(CallbackQueryHandler(handle_ready_click, pattern="^ready_"))
     app.add_handler(CallbackQueryHandler(handle_start_private, pattern="^startprivate_"))
