@@ -279,8 +279,7 @@ async def view_my_quizzes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for idx, (qid, title, timer, q_count) in enumerate(rows, 1):
         time_display = f"{timer}s" if timer < 60 else f"{timer // 60}m"
         text += f"{idx}. **{escape_markdown(title)}**\n"
-        text += f"   ☞ {q_count} question{'s' if q_count != 1 else ''} | {time_display}/Q\n"
-        text += f"   `/view_{qid}`\n\n"
+        text += f"   ☞ {q_count} question{'s' if q_count != 1 else ''} | {time_display}/Q\n\n"
     
     # Build keyboard with view buttons
     keyboard = []
@@ -344,7 +343,7 @@ async def show_summary_panel(query, context, quiz_id):
         )
         
         inline_keyboard = [
-            [InlineKeyboardButton("🏁 Start Solo Quiz", callback_data=f"runsolo_{quiz_id}")],
+            [InlineKeyboardButton("🏁 Start Private Chat", callback_data=f"startprivate_{quiz_id}")],
             [InlineKeyboardButton("👥 Start in Group", url=f"https://t.me/{bot_username}?startgroup=quiz_{quiz_id}")],
             [InlineKeyboardButton("📢 Share Quiz", url=f"https://t.me/share/url?url=https://t.me/{bot_username}?start=quiz_{quiz_id}")],
             [InlineKeyboardButton("⚙️ Edit", callback_data=f"edit_{quiz_id}"), InlineKeyboardButton("📊 Status", callback_data=f"status_{quiz_id}")]
@@ -386,7 +385,7 @@ async def show_summary_panel_text(update, context, quiz_id):
         )
         
         inline_keyboard = [
-            [InlineKeyboardButton("🏁 Start Solo Quiz", callback_data=f"runsolo_{quiz_id}")],
+            [InlineKeyboardButton("🏁 Start Private Chat", callback_data=f"startprivate_{quiz_id}")],
             [InlineKeyboardButton("👥 Start in Group", url=f"https://t.me/{bot_username}?startgroup=quiz_{quiz_id}")],
             [InlineKeyboardButton("📢 Share Quiz", url=f"https://t.me/share/url?url=https://t.me/{bot_username}?start=quiz_{quiz_id}")],
             [InlineKeyboardButton("⚙️ Edit", callback_data=f"edit_{quiz_id}"), InlineKeyboardButton("📊 Status", callback_data=f"status_{quiz_id}")]
@@ -397,21 +396,21 @@ async def show_summary_panel_text(update, context, quiz_id):
         logging.error(f"Error in show_summary_panel_text: {e}")
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
-async def handle_run_solo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle solo quiz start"""
+async def handle_start_private(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle private chat quiz start - requires only 1 user"""
     query = update.callback_query
     await query.answer()
     quiz_id = int(query.data.split("_")[1])
     
     await query.edit_message_text(
-        text="🎮 **Solo Mode**\n\nAap akele is quiz ko start karne ke liye ready ho gaye?\n\nClick 'Confirm' to begin!",
+        text="🎮 **Private Mode**\n\nAap akele is quiz ko start karne ke liye ready ho gaye?\n\nClick 'Confirm' to begin!",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Confirm Start", callback_data=f"confirm_solo_{quiz_id}")]
+            [InlineKeyboardButton("✅ Confirm Start", callback_data=f"confirm_private_{quiz_id}")]
         ])
     )
 
-async def handle_confirm_solo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Confirm and start solo quiz"""
+async def handle_confirm_private(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Confirm and start private quiz with 1 user"""
     query = update.callback_query
     chat_id = query.message.chat_id
     user_id = query.from_user.id
@@ -432,8 +431,9 @@ async def handle_confirm_solo(update: Update, context: ContextTypes.DEFAULT_TYPE
             "question_start_times": {},
             "ready_users": {user_id},
             "quiz_started": True,
-            "poll_message_ids": {},  # Track poll message IDs for closing
-            "setup_message_id": None  # Track setup message to keep it
+            "poll_message_ids": {},
+            "setup_message_id": None,
+            "is_private": True
         }
     
     await asyncio.sleep(1)
@@ -613,9 +613,10 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
             "question_start_times": {},
             "ready_users": set(),  
             "quiz_started": False,
-            "poll_message_ids": {},  # Track poll message IDs for closing
-            "setup_message_id": message_id,  # Store setup message ID
-            "setup_panel_text": query.message.text  # Store original panel text
+            "poll_message_ids": {},
+            "setup_message_id": message_id,
+            "setup_panel_text": query.message.text,
+            "is_private": False
         }
     else:
         # Update setup message ID if not already set
@@ -742,7 +743,7 @@ async def send_next_group_poll(chat_id, context):
     
     # Check if quiz is still active before closing poll
     if chat_id in GROUP_GAMES:
-        # 🔴 CLOSE POLL EXPLICITLY
+        # 🔴 CLOSE POLL EXPLICITLY - This LOCKS the poll options
         try:
             await context.bot.stop_poll(chat_id=chat_id, message_id=game["poll_message_ids"][game["current_q"]])
         except Exception as e:
@@ -909,7 +910,7 @@ def main():
     # Registering core structures hooks
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("stop", stop_quiz))  # Add /stop command
+    app.add_handler(CommandHandler("stop", stop_quiz))
     
     app.add_handler(new_quiz_handler)
     app.add_handler(quiz_edit_flow_handler)
@@ -920,8 +921,8 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_view_quiz_callback, pattern="^viewq_"))
     
     app.add_handler(CallbackQueryHandler(handle_ready_click, pattern="^ready_"))
-    app.add_handler(CallbackQueryHandler(handle_run_solo, pattern="^runsolo_"))
-    app.add_handler(CallbackQueryHandler(handle_confirm_solo, pattern="^confirm_solo_"))
+    app.add_handler(CallbackQueryHandler(handle_start_private, pattern="^startprivate_"))
+    app.add_handler(CallbackQueryHandler(handle_confirm_private, pattern="^confirm_private_"))
     app.add_handler(CallbackQueryHandler(handle_quiz_status, pattern="^status_"))
     app.add_handler(CallbackQueryHandler(edit_quiz_menu, pattern="^edit_"))
     app.add_handler(CallbackQueryHandler(back_to_summary, pattern="^backto_"))
