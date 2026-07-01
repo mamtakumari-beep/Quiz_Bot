@@ -167,7 +167,7 @@ async def receive_desc(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton(
                 "➕ Create Poll via Web App",
-                web_app=types.WebAppInfo(url="https://mamtakumari-beep.github.io/Polls-question-/")
+                web_app=WebAppInfo(url="https://mamtakumari-beep.github.io/Polls-question-/")
             )],
             [InlineKeyboardButton("Send Poll Manually", callback_data="manual_poll")]
         ])
